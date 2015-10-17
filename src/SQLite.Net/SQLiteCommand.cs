@@ -23,6 +23,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using JetBrains.Annotations;
@@ -38,6 +39,7 @@ namespace SQLite.Net
 
         private readonly SQLiteConnection _conn;
         private readonly ISQLitePlatform _sqlitePlatform;
+        private const string DateTimeFormat = "yyyy-MM-ddTHH:mm:ss.fffffffZ";
 
         internal SQLiteCommand(ISQLitePlatform platformImplementation, SQLiteConnection conn)
         {
@@ -343,11 +345,13 @@ namespace SQLite.Net
                 {
                     if (storeDateTimeAsTicks)
                     {
-                        isqLite3Api.BindInt64(stmt, index, ((DateTime) value).ToUniversalTime().Ticks);
+                        var val = ((DateTime) value).ToUniversalTime().Ticks;
+                        isqLite3Api.BindInt64(stmt, index, val);
                     }
                     else
                     {
-                        isqLite3Api.BindText16(stmt, index, ((DateTime) value).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffffffZ"), -1, NegativePointer);
+                        var val = ((DateTime) value).ToUniversalTime().ToString(DateTimeFormat, CultureInfo.InvariantCulture);
+                        isqLite3Api.BindText16(stmt, index, val, -1, NegativePointer);
                     }
                 }
                 else if (value is DateTimeOffset)
@@ -358,12 +362,13 @@ namespace SQLite.Net
                 {
                     if (storeDateTimeAsTicks)
                     {
-                        isqLite3Api.BindInt64(stmt, index, ((ISerializable<DateTime>) value).Serialize().ToUniversalTime().Ticks);
+                        var val = ((ISerializable<DateTime>) value).Serialize().ToUniversalTime().Ticks;
+                        isqLite3Api.BindInt64(stmt, index, val);
                     }
                     else
                     {
-                        isqLite3Api.BindText16(stmt, index,
-                            ((ISerializable<DateTime>) value).Serialize().ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffffffZ"), -1, NegativePointer);
+                        var val = ((ISerializable<DateTime>) value).Serialize().ToUniversalTime().ToString(DateTimeFormat, CultureInfo.InvariantCulture);
+                        isqLite3Api.BindText16(stmt, index, val, -1, NegativePointer);
                     }
                 }
                 else if (value.GetType().GetTypeInfo().IsEnum)
@@ -466,9 +471,14 @@ namespace SQLite.Net
             {
                 if (_conn.StoreDateTimeAsTicks)
                 {
-                    return new DateTime(_sqlitePlatform.SQLiteApi.ColumnInt64(stmt, index), DateTimeKind.Utc);
+                    var val = _sqlitePlatform.SQLiteApi.ColumnInt64(stmt, index);
+                    return new DateTime(val, DateTimeKind.Utc);
                 }
-                return DateTime.Parse(_sqlitePlatform.SQLiteApi.ColumnText16(stmt, index));
+                else
+                {
+                    var val = _sqlitePlatform.SQLiteApi.ColumnText16(stmt, index);
+                    return DateTime.ParseExact(val, DateTimeFormat, CultureInfo.InvariantCulture);
+                }
             }
             if (clrType == typeof (DateTimeOffset))
             {
@@ -479,11 +489,13 @@ namespace SQLite.Net
                 DateTime value;
                 if (_conn.StoreDateTimeAsTicks)
                 {
-                    value = new DateTime(_sqlitePlatform.SQLiteApi.ColumnInt64(stmt, index), DateTimeKind.Utc);
+                    var val = _sqlitePlatform.SQLiteApi.ColumnInt64(stmt, index);
+                    value = new DateTime(val, DateTimeKind.Utc);
                 }
                 else
                 {
-                    value = DateTime.Parse(_sqlitePlatform.SQLiteApi.ColumnText16(stmt, index));
+                    var val = _sqlitePlatform.SQLiteApi.ColumnText16(stmt, index);
+                    value = DateTime.ParseExact(val, DateTimeFormat, CultureInfo.InvariantCulture);
                 }
                 return Activator.CreateInstance(clrType, value);
             }
