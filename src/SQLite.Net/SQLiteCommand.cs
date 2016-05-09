@@ -155,6 +155,176 @@ namespace SQLite.Net
         }
 
         [PublicAPI]
+        public IEnumerable<TElement> ExecuteDeferredQuery<TElement, T1>(Action<TElement, T1> mapping) {
+            return ExecuteDeferredQuery<TElement>((e, joins) => mapping(e, (T1) joins[0]), typeof (T1));
+        }
+
+        [PublicAPI]
+        public IEnumerable<TElement> ExecuteDeferredQuery<TElement, T1, T2>(Action<TElement, T1, T2> mapping) {
+            return ExecuteDeferredQuery<TElement>((e, joins) => mapping(e, (T1) joins[0], (T2) joins[1]), typeof (T1), typeof (T2));
+        }
+
+        [PublicAPI]
+        public IEnumerable<TElement> ExecuteDeferredQuery<TElement, T1, T2, T3>(Action<TElement, T1, T2, T3> mapping) {
+            return ExecuteDeferredQuery<TElement>((e, joins) => mapping(e, (T1) joins[0], (T2) joins[1], (T3) joins[2]), typeof (T1), typeof (T2), typeof (T3));
+        }
+
+        [PublicAPI]
+        public IEnumerable<TElement> ExecuteDeferredQuery<TElement, T1, T2, T3, T4>(Action<TElement, T1, T2, T3, T4> mapping) {
+            return ExecuteDeferredQuery<TElement>((e, joins) => mapping(e, (T1) joins[0], (T2) joins[1], (T3) joins[2], (T4) joins[3]), typeof (T1), typeof (T2),
+                typeof (T3), typeof (T4));
+        }
+
+        [PublicAPI]
+        public IEnumerable<TElement> ExecuteDeferredQuery<TElement, T1, T2, T3, T4, T5>(Action<TElement, T1, T2, T3, T4, T5> mapping) {
+            return ExecuteDeferredQuery<TElement>((e, joins) => mapping(e, (T1) joins[0], (T2) joins[1], (T3) joins[2], (T4) joins[3], (T5) joins[4]),
+                typeof (T1), typeof (T2), typeof (T3), typeof (T4), typeof (T5));
+        }
+
+        [PublicAPI]
+        public IEnumerable<T> ExecuteDeferredQuery<T>(Action<T, object[]> mapping, params Type[] types)
+        {
+            _conn.TraceListener.WriteLine("Executing Query: " + this);
+
+            var tableMappings = new TableMapping[types.Length + 1];
+
+            tableMappings[0] = _conn.GetMapping(typeof (T));
+
+            for (int i = 0; i < types.Length; i++)
+            {
+                tableMappings[i + 1] = _conn.GetMapping(types[i]);
+            }
+
+            var stmt = Prepare();
+
+            try
+            {
+                var cols = new TableMapping.Column[_sqlitePlatform.SQLiteApi.ColumnCount(stmt)];
+
+                // SQL columns must match mapping exactly else
+                // this won't work.
+                for (int i = 0; i < cols.Length; i++)
+                {
+                    var name = _sqlitePlatform.SQLiteApi.ColumnName16(stmt, i);
+
+                    int tableColumnIndex = 0;
+
+                    foreach (var t in tableMappings)
+                    {
+                        tableColumnIndex += t.Columns.Length;
+
+                        if (i < tableColumnIndex)
+                        {
+                            cols[i] = t.FindColumn(name);
+                            break;
+                        }
+                    }
+                }
+
+                while (_sqlitePlatform.SQLiteApi.Step(stmt) == Result.Row)
+                {
+                    var objs = new object[tableMappings.Length];
+
+                    int tableIndex = 0;
+                    int tableColumnIndex = tableMappings[tableIndex].Columns.Length - 1;
+
+                    for (int i = 0; i < cols.Length; i++)
+                    {
+                        if (i > tableColumnIndex)
+                        {
+                            tableIndex++;
+                            tableColumnIndex += tableMappings[tableIndex].Columns.Length;
+                        }
+
+                        if (cols[i] == null) continue;
+
+                        var colType = _sqlitePlatform.SQLiteApi.ColumnType(stmt, i);
+
+                        var val = ReadCol(stmt, i, colType, cols[i].ColumnType);
+
+                        // outer joins
+                        if (val != null)
+                        {
+                            object iObj = objs[tableIndex] ?? (objs[tableIndex] = Activator.CreateInstance(tableMappings[tableIndex].MappedType));
+
+                            cols[i].SetValue(iObj, val);
+                        }
+                    }
+
+                    var obj = (T) objs[0];
+
+                    mapping(obj, objs.Skip(1).ToArray());
+
+                    OnInstanceCreated(obj);
+
+                    yield return obj;
+                }
+            }
+            finally
+            {
+                _sqlitePlatform.SQLiteApi.Finalize(stmt);
+            }
+        }
+
+        [PublicAPI]
+        public IEnumerable<TResult> ExecuteDeferredQuery<T1, TResult>(Func<T1, TResult> mapping)
+            => ExecuteDeferredQuery((columns) => mapping((T1) columns[0]), typeof (T1));
+
+        [PublicAPI]
+        public IEnumerable<TResult> ExecuteDeferredQuery<T1, T2, TResult>(Func<T1, T2, TResult> mapping)
+            => ExecuteDeferredQuery((columns) => mapping((T1) columns[0], (T2) columns[1]), typeof (T1), typeof (T2));
+
+        [PublicAPI]
+        public IEnumerable<TResult> ExecuteDeferredQuery<T1, T2, T3, TResult>(Func<T1, T2, T3, TResult> mapping)
+            => ExecuteDeferredQuery((columns) => mapping((T1) columns[0], (T2) columns[1], (T3) columns[2]), typeof (T1), typeof (T2), typeof (T3));
+
+        [PublicAPI]
+        public IEnumerable<TResult> ExecuteDeferredQuery<T1, T2, T3, T4, TResult>(Func<T1, T2, T3, T4, TResult> mapping)
+            => ExecuteDeferredQuery((columns) => mapping((T1) columns[0], (T2) columns[1], (T3) columns[2], (T4) columns[3]), typeof (T1), typeof (T2),
+                typeof (T3), typeof (T4));
+
+        [PublicAPI]
+        public IEnumerable<TResult> ExecuteDeferredQuery<T1, T2, T3, T4, T5, TResult>(Func<T1, T2, T3, T4, T5, TResult> mapping)
+            => ExecuteDeferredQuery((columns) => mapping((T1) columns[0], (T2) columns[1], (T3) columns[2], (T4) columns[3], (T5) columns[4]), typeof (T1),
+                typeof (T2), typeof (T3), typeof (T4), typeof (T5));
+
+        [PublicAPI]
+        public IEnumerable<TResult> ExecuteDeferredQuery<TResult>(Func<object[], TResult> mapping, params Type[] types)
+        {
+            _conn.TraceListener.WriteLine("Executing Query: {0}", this);
+
+            var stmt = Prepare();
+
+            try
+            {
+                var colCount = _sqlitePlatform.SQLiteApi.ColumnCount(stmt);
+
+                if (colCount != types.Length)
+                {
+                    throw new Exception("Column count does not match number of arguments in mapping function.");
+                }
+
+                while (_sqlitePlatform.SQLiteApi.Step(stmt) == Result.Row)
+                {
+                    var values = new object[colCount];
+
+                    for (int i = 0; i < colCount; i++)
+                    {
+                        var colType = _sqlitePlatform.SQLiteApi.ColumnType(stmt, i);
+
+                        values[i] = ReadCol(stmt, i, colType, types[i]);
+                    }
+
+                    yield return mapping(values);
+                }
+            }
+            finally
+            {
+                _sqlitePlatform.SQLiteApi.Finalize(stmt);
+            }
+        }
+
+        [PublicAPI]
         [CanBeNull]
         public T ExecuteScalar<T>()
         {
