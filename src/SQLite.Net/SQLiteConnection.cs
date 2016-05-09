@@ -276,6 +276,13 @@ namespace SQLite.Net
             }
         }
 
+        /// <summary>
+        ///     Sets whether to enforce foreign key constraints or not.
+        ///     Defaults to false.
+        /// </summary>
+        /// <param name="shouldEnforce">True to enforce foreign key constraints.</param>
+        public void EnforceForeignKeyConstraints(bool shouldEnforce) => Execute($"PRAGMA foreign_keys = {(shouldEnforce ? "ON" : "OFF")};");
+
         [JetBrains.Annotations.NotNull]
         private static byte[] GetNullTerminatedUtf8(string s)
         {
@@ -1141,6 +1148,22 @@ namespace SQLite.Net
         }
 
         /// <summary>
+        ///     Whether to defer foreign key checks until the end of the transaction.
+        /// 
+        ///     Should only be called inside a transaction. Defaults to false and will
+        ///     reset to false upon the end of a transaction.
+        /// </summary>
+        /// <param name="shouldDefer">True to defer foreign key checks.</param>
+        [PublicAPI]
+        public void DeferForeignKeys(bool shouldDefer)
+        {
+            if (Interlocked.Exchange(ref _transactionDepth, 0) != 0)
+            {
+                Execute($"PRAGMA defer_foreign_keys = {(shouldDefer ? "ON" : "OFF")};");
+            }
+        }
+
+        /// <summary>
         ///     Executes
         ///     <paramref name="action" />
         ///     within a (possibly nested) transaction by wrapping it in a SAVEPOINT. If an
@@ -1154,12 +1177,19 @@ namespace SQLite.Net
         ///     of operations on the connection but should never call <see cref="BeginTransaction" /> or
         ///     <see cref="Commit" />.
         /// </param>
+        /// <param name="deferForeignKeys">
+        ///     True to defer foreign key checks until the end of the transaction.
+        /// </param>
         [PublicAPI]
-        public void RunInTransaction(Action action)
+        public void RunInTransaction(Action action, bool deferForeignKeys = false)
         {
             try
             {
                 var savePoint = SaveTransactionPoint();
+                if (deferForeignKeys)
+                {
+                    DeferForeignKeys(true);
+                }
                 action();
                 Release(savePoint);
             }
