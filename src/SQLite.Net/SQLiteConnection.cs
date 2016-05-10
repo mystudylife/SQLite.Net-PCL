@@ -331,32 +331,45 @@ namespace SQLite.Net
         ///     methods to set and get properties of objects.
         /// </returns>
         [PublicAPI]
-        public TableMapping GetMapping<T>()
-        {
-            return GetMapping(typeof (T));
-        }
+        public TableMapping GetMapping<T>() => GetMapping(typeof(T));
 
         /// <summary>
         ///     Executes a "drop table" on the database.  This is non-recoverable.
         /// </summary>
         [PublicAPI]
-        public int DropTable<T>()
-        {
-            return DropTable(typeof (T));
-        }
+        public int DropTable<T>() => DropTable(typeof(T));
 
         /// <summary>
         ///     Executes a "drop table" on the database.  This is non-recoverable.
         /// </summary>
         [PublicAPI]
-        public int DropTable(Type t)
-        {
-            var map = GetMapping(t);
+        public int DropTable(Type t) => DropTable(GetMapping(t).TableName);
 
-            var query = string.Format("drop table if exists \"{0}\"", map.TableName);
+        /// <summary>
+        ///     Executes a "drop table" on the database.  This is non-recoverable.
+        /// </summary>
+        [PublicAPI]
+        public int DropTable(string tableName)
+            => Execute($"drop table if exists \"{tableName}\"");
 
-            return Execute(query);
-        }
+        /// <summary>
+        ///     Checks whether the table for the given type exists.
+        /// </summary>
+        [PublicAPI]
+        public bool TableExists<T>() => TableExists(typeof(T));
+
+        /// <summary>
+        ///     Checks whether the table for the given type exists.
+        /// </summary>
+        [PublicAPI]
+        public bool TableExists(Type t) => TableExists(GetMapping(t).TableName);
+
+        /// <summary>
+        ///     Checks whether the table with the given name exists.
+        /// </summary>
+        [PublicAPI]
+        public bool TableExists(string tableName)
+            => ExecuteScalar<int>($"select count(*) from \"sqlite_master\" where type='table' and name='{tableName}'") > 0;
 
         /// <summary>
         ///     Executes a "create table if not exists" on the database. It also
@@ -368,10 +381,7 @@ namespace SQLite.Net
         ///     The number of entries added to the database schema.
         /// </returns>
         [PublicAPI]
-        public int CreateTable<T>(CreateFlags createFlags = CreateFlags.None)
-        {
-            return CreateTable(typeof (T), createFlags);
-        }
+        public int CreateTable<T>(CreateFlags createFlags = CreateFlags.None) => CreateTable(typeof(T), createFlags);
 
         /// <summary>
         ///     Executes a "create table if not exists" on the database. It also
@@ -387,60 +397,63 @@ namespace SQLite.Net
         [PublicAPI]
         public int CreateTable(Type ty, CreateFlags createFlags = CreateFlags.None)
         {
+            int r = 0;
+
             var map = GetMapping(ty, createFlags);
-
-            var queryBuilder = new StringBuilder("create table if not exists \"").Append(map.TableName).AppendLine("\"(");
-                
             var mappedColumns = map.Columns;
-            var columnCount = mappedColumns.Length;
 
-            if (columnCount == 0)
+            // Pre-check as `create table if not exists` always returns 0
+            if (!TableExists(map.TableName))
             {
-                throw new Exception("Table has no (public) columns");
-            }
+                var queryBuilder = new StringBuilder("create table if not exists \"").Append(map.TableName).AppendLine("\"(");
+                
+                var columnCount = mappedColumns.Length;
 
-            var fkDecls = new List<string>();
-
-            for (int i = 0; i < columnCount; i++)
-            {
-                var c = mappedColumns[i];
-
-                if (c.IsForeignKey)
+                if (columnCount == 0)
                 {
-                    fkDecls.Add(Orm.SqlForeignKeyDecl(c, GetMapping(c.ForeignKey.ForeignType)));
+                    throw new Exception("Table has no (public) columns");
                 }
 
-                queryBuilder.Append(Orm.SqlDecl(c, StoreDateTimeAsTicks, Serializer, ExtraTypeMappings));
+                var fkDecls = new List<string>();
 
-                if (i < (columnCount - 1) || fkDecls.Count > 0)
+                for (int i = 0; i < columnCount; i++)
                 {
-                    queryBuilder.AppendLine(",");
-                }
-            }
+                    var c = mappedColumns[i];
 
-            if (fkDecls.Count > 0)
-            {
-                queryBuilder.AppendLine();
+                    if (c.IsForeignKey)
+                    {
+                        fkDecls.Add(Orm.SqlForeignKeyDecl(c, GetMapping(c.ForeignKey.ForeignType)));
+                    }
 
-                for (int i = 0; i < fkDecls.Count; i++)
-                {
-                    queryBuilder.Append(fkDecls[i]);
+                    queryBuilder.Append(Orm.SqlDecl(c, StoreDateTimeAsTicks, Serializer, ExtraTypeMappings));
 
-                    if (i < (fkDecls.Count - 1))
+                    if (i < (columnCount - 1) || fkDecls.Count > 0)
                     {
                         queryBuilder.AppendLine(",");
                     }
                 }
+
+                if (fkDecls.Count > 0)
+                {
+                    queryBuilder.AppendLine();
+
+                    for (int i = 0; i < fkDecls.Count; i++)
+                    {
+                        queryBuilder.Append(fkDecls[i]);
+
+                        if (i < (fkDecls.Count - 1))
+                        {
+                            queryBuilder.AppendLine(",");
+                        }
+                    }
+                }
+
+                queryBuilder.AppendLine().Append(")");
+
+                r = Execute(queryBuilder.ToString());
             }
-
-            queryBuilder.AppendLine().Append(")");
-
-            var count = Execute(queryBuilder.ToString());
-
-            if (count == 0)
+            else
             {
-                //Possible bug: This always seems to return 0?
-                // Table already exists, migrate it
                 MigrateTable(map);
             }
 
@@ -481,10 +494,10 @@ namespace SQLite.Net
             {
                 var index = indexes[indexName];
                 var columns = index.Columns.OrderBy(i => i.Order).Select(i => i.ColumnName).ToArray();
-                count += CreateIndex(indexName, index.TableName, columns, index.Unique);
+                r += CreateIndex(indexName, index.TableName, columns, index.Unique);
             }
 
-            return count;
+            return r;
         }
 
         /// <summary>
@@ -598,6 +611,8 @@ namespace SQLite.Net
 
         private void MigrateTable(TableMapping map)
         {
+            // TODO: Check if we add foreign keys here?
+
             var existingCols = GetTableInfo(map.TableName);
 
             var toBeAdded = new List<TableMapping.Column>();
