@@ -156,6 +156,8 @@ namespace SQLite.Net
 
                 DefaultValue = Orm.GetDefaultValue(prop);
 
+                ForeignKey = Orm.GetForeignKey(prop);
+
                 Indices = Orm.GetIndices(prop);
                 if (!Indices.Any()
                     && !IsPK
@@ -191,6 +193,12 @@ namespace SQLite.Net
 
             [PublicAPI]
             public bool IsPK { get; private set; }
+
+            [PublicAPI]
+            public bool IsForeignKey => ForeignKey != null;
+
+            [PublicAPI]
+            public ForeignKeyAttribute ForeignKey { get; private set; }
 
             [PublicAPI]
             public IEnumerable<IndexedAttribute> Indices { get; set; }

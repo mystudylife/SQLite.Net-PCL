@@ -27,6 +27,7 @@ using System.Linq;
 using System.Reflection;
 using JetBrains.Annotations;
 using SQLite.Net.Attributes;
+using SQLite.Net.Interop;
 using NotNullAttribute = SQLite.Net.Attributes.NotNullAttribute;
 
 namespace SQLite.Net
@@ -63,6 +64,33 @@ namespace SQLite.Net
             }
 
             return decl;
+        }
+
+        internal static string SqlForeignKeyDecl(TableMapping.Column fk, TableMapping referencedTable)
+        {
+            if (!fk.IsForeignKey) throw new ArgumentException("Column is not a foreign key", nameof(fk));
+            if (fk.ForeignKey.ForeignType != referencedTable.MappedType) throw new ArgumentException("Must match foreign type", nameof(referencedTable));
+            if (referencedTable.PK == null) throw new ArgumentException("Must have primary key", nameof(referencedTable));
+
+            string onDeleteSql;
+
+            switch (fk.ForeignKey.OnDeleteAction)
+            {
+                case OnDeleteAction.Restrict:
+                    onDeleteSql = "restrict";
+                    break;
+                case OnDeleteAction.SetNull:
+                    onDeleteSql = "set null";
+                    break;
+                case OnDeleteAction.Cascade:
+                    onDeleteSql = "cascade";
+                    break;
+                default:
+                    onDeleteSql = "no action";
+                    break;
+            }
+
+            return $"foreign key ({fk.Name}) references {referencedTable.TableName}({referencedTable.PK.Name}) on delete {onDeleteSql}";
         }
 
         private static string SqlType(TableMapping.Column p, bool storeDateTimeAsTicks,
@@ -160,6 +188,8 @@ namespace SQLite.Net
         {
             return p.GetCustomAttributes<AutoIncrementAttribute>().Any();
         }
+
+        internal static ForeignKeyAttribute GetForeignKey(MemberInfo p) => p.GetCustomAttribute<ForeignKeyAttribute>();   
 
         internal static IEnumerable<IndexedAttribute> GetIndices(MemberInfo p)
         {

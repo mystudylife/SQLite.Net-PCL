@@ -389,21 +389,53 @@ namespace SQLite.Net
         {
             var map = GetMapping(ty, createFlags);
 
-            var query = "create table if not exists \"" + map.TableName + "\"(\n";
+            var queryBuilder = new StringBuilder("create table if not exists \"").Append(map.TableName).AppendLine("\"(");
+                
+            var mappedColumns = map.Columns;
+            var columnCount = mappedColumns.Length;
 
-            var mapColumns = map.Columns;
-
-            if (!mapColumns.Any())
+            if (columnCount == 0)
             {
                 throw new Exception("Table has no (public) columns");
             }
 
-            var decls = mapColumns.Select(p => Orm.SqlDecl(p, StoreDateTimeAsTicks, Serializer, ExtraTypeMappings));
-            var decl = string.Join(",\n", decls.ToArray());
-            query += decl;
-            query += ")";
+            var fkDecls = new List<string>();
 
-            var count = Execute(query);
+            for (int i = 0; i < columnCount; i++)
+            {
+                var c = mappedColumns[i];
+
+                if (c.IsForeignKey)
+                {
+                    fkDecls.Add(Orm.SqlForeignKeyDecl(c, GetMapping(c.ForeignKey.ForeignType)));
+                }
+
+                queryBuilder.Append(Orm.SqlDecl(c, StoreDateTimeAsTicks, Serializer, ExtraTypeMappings));
+
+                if (i < (columnCount - 1) || fkDecls.Count > 0)
+                {
+                    queryBuilder.AppendLine(",");
+                }
+            }
+
+            if (fkDecls.Count > 0)
+            {
+                queryBuilder.AppendLine();
+
+                for (int i = 0; i < fkDecls.Count; i++)
+                {
+                    queryBuilder.Append(fkDecls[i]);
+
+                    if (i < (fkDecls.Count - 1))
+                    {
+                        queryBuilder.AppendLine(",");
+                    }
+                }
+            }
+
+            queryBuilder.AppendLine().Append(")");
+
+            var count = Execute(queryBuilder.ToString());
 
             if (count == 0)
             {
@@ -413,7 +445,7 @@ namespace SQLite.Net
             }
 
             var indexes = new Dictionary<string, IndexInfo>();
-            foreach (var c in mapColumns)
+            foreach (var c in mappedColumns)
             {
                 foreach (var i in c.Indices)
                 {

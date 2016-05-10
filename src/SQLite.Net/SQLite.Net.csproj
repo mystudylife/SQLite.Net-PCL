@@ -68,6 +68,7 @@
     <Compile Include="ActiveInsertCommand.cs" />
     <Compile Include="Annotations\JetBrains.cs" />
     <Compile Include="Attributes\DefaultAttribute.cs" />
+    <Compile Include="Attributes\ForeignKeyAttribute.cs" />
     <Compile Include="Attributes\NotNullAttribute.cs" />
     <Compile Include="BaseTableQuery.cs" />
     <Compile Include="BlobSerializerDelegate.cs" />
@@ -85,6 +86,7 @@
     <Compile Include="Interop\IStopwatch.cs" />
     <Compile Include="Interop\IStopwatchFactory.cs" />
     <Compile Include="Interop\IVolatileService.cs" />
+    <Compile Include="Interop\OnDeleteAction.cs" />
     <Compile Include="Interop\Result.cs" />
     <Compile Include="Interop\IDbStatement.cs" />
     <Compile Include="IBlobSerializer.cs" />
